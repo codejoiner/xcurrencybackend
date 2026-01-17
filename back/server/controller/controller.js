@@ -71,108 +71,104 @@ async function DepositAddress(req, res) {
 }
 
 
+const axios = require('axios');
+
 const Withdraw = async (req, res) => {
   const minamount = 5;
 
+  // 1. Genzura niba user yinjiye (Authentication check)
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ message: "Permission denied" });
   }
 
   const { uid } = req.user;
   const { amount, walletAddress, network } = req.body;
-
   const amountNumber = Number(amount);
+
+  // 2. Validation y'imibare n'aderese ya wallet
+  if (!amount || !walletAddress || !network) {
+    return res.status(400).json({ message: "amount, walletAddress and network are required!" });
+  }
 
   if (amountNumber < minamount) {
     return res.status(400).json({ message: `MINIMUM WITHDRAW ${minamount} USDT` });
   }
 
-  if (!amount || !walletAddress || !network) {
-    return res.status(400).json({
-      message: "amount, walletAddress and network are required!"
-    });
-  }
-
   if (isNaN(amountNumber) || amountNumber <= 0) {
-    return res.status(400).json({
-      message: "Invalid withdraw amount"
-    });
+    return res.status(400).json({ message: "Invalid withdraw amount" });
   }
 
   const regex = /^[a-zA-Z0-9]+$/;
-  if (!regex.test(walletAddress)) {
-    return res.status(400).json({ message: "special characters not allowed!" });
-  }
-
-  if (typeof walletAddress !== "string" || walletAddress.trim().length < 10) {
-    return res.status(400).json({
-      message: "Invalid wallet address"
-    });
+  if (!regex.test(walletAddress) || walletAddress.trim().length < 10) {
+    return res.status(400).json({ message: "Invalid wallet address format!" });
   }
 
   try {
+    // 3. Genzura balance ya user muri database
     const [ubalance] = await pool.query(
       "SELECT amount FROM balance WHERE userid = ?",
       [uid]
     );
 
     if (!ubalance || ubalance.length === 0) {
-      return res.status(404).json({
-        message: "Insufficient Funds"
-      });
+      return res.status(404).json({ message: "User balance not found" });
     }
 
     const userbalance = parseFloat(ubalance[0].amount);
 
     if (amountNumber > userbalance) {
-      return res.status(400).json({
-        message: "Insufficient Funds"
-      });
+      return res.status(400).json({ message: "Insufficient Funds" });
     }
 
+   
+    const authResponse = await axios.post(`${process.env.PAYNOW_API_URL}/v1/auth`, {
+      email: process.env.NOWPAYMENTS_EMAIL,
+      password: process.env.NOWPAYMENTS_PASSWORD
+    });
+
+    const jwtToken = authResponse.data.token;
+
+  
     const payoutResponse = await axios.post(
       `${process.env.PAYNOW_API_URL}/v1/payout`,
       {
-        amount: amountNumber,
-        currency: "USDT",
-        address: walletAddress,
-        network: network,
+        withdrawals: [
+          {
+            address: walletAddress,
+            currency: "usdt",
+            amount: amountNumber,
+            network: "bsc"           }
+        ],
         ipn_callback_url: "https://xcurrencybackend-5.onrender.com/api/Nowpayments/webhook"
       },
       {
         headers: {
           "x-api-key": process.env.APIKEY,
+          "Authorization": `Bearer ${jwtToken}`,
           "Content-Type": "application/json",
         },
       }
     );
 
-
-    const payout = payoutResponse.data;
-    console.log(payout)
-
-    await pool.execute(
-      "INSERT INTO `withdraw`(`user_id`, `amount`, `status`, `binancewId`) VALUES (?,?,?,?)",
-      [uid, amountNumber, payout.status, payout.id]
-    );
-
-    await pool.execute(
-      "UPDATE balance SET amount = amount - ? WHERE userid = ?",
-      [amountNumber, uid]
+    await pool.query(
+        "UPDATE balance SET amount = amount - ? WHERE userid = ?",
+        [amountNumber, uid]
     );
 
     return res.status(200).json({
-      message: `Withdraw requested initiated with ${amountNumber} USDT` ,
+      message: "Withdrawal initiated successfully!",
     });
 
-  } catch (err) {
-    return res.status(500).json({
-      message: err.response?.data?.message || err.message
+  } catch (error) {
+    console.error("Error details:", error.response?.data || error.message);
+    
+    const errorMessage = error.response?.data?.message || "Internal Server Error";
+    return res.status(error.response?.status || 500).json({
+      message: "Withdrawal failed",
+      details: errorMessage
     });
   }
 };
-
-    console.log(`${process.env.PAYNOW_API_URL}/v1/payouts`)
 
 
 const handleInvestment = async (req, res) => {
