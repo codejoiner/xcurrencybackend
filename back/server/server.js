@@ -21,10 +21,9 @@ const routes=require('./routes/routes')
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }));
 
-const allowed_origin=process.env.ISINPRODUCT==='production' ? 'https://xcurrency.vercel.app':'http://localhost:5173'
 
 app.use(cors({
-    origin:allowed_origin,
+    origin:'https://xcurrency.vercel.app',
     method:['POST','GET','DELETE','PUT'],
     credentials:true
 }))
