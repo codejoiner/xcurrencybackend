@@ -40,7 +40,7 @@ async function DepositAddress(req, res) {
         price_currency: 'usd',
         pay_currency: "usdtbsc",
         order_id: uid.toString(),
-          ipn_callback_url: "https://retractile-alejandro-jawbreakingly.ngrok-free.dev/api/Nowpayments/webhook"
+          ipn_callback_url: "https://xcurrencybackend-5.onrender.com/api/Nowpayments/webhook"
       },
       {
         headers: { 
@@ -137,7 +137,7 @@ const Withdraw = async (req, res) => {
         currency: "USDT",
         address: walletAddress,
         network: network,
-        ipn_callback_url: "https://retractile-alejandro-jawbreakingly.ngrok-free.dev/nowpayments/ipn"
+        ipn_callback_url: "https://xcurrencybackend-5.onrender.com/nowpayments/ipn"
       },
       {
         headers: {
