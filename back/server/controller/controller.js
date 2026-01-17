@@ -299,40 +299,40 @@ if(parseFloat(amount)>parseFloat(ub)){
 
 
 
-const Dashboard_value= async(req,res)=>{
-  if(! req.user||!req.user.uid){
-    return res.status(401).json({message:"Permision denied!"})
+const Dashboard_value = async (req, res) => {
+  if (!req.user || !req.user.uid) {
+    return res.status(401).json({ message: "Permission denied!" });
   }
-  const {uid}=req.user
-  try{
-    const [result]=await pool.query(
+
+  const { uid } = req.user;
+
+  try {
+    const [result] = await pool.query(
       `SELECT 
-  u.userid,
- COALESCE(b.amount, 0.00) AS amount,
-  SUM(COALESCE(ct.capitalinvested, 0.00)) AS capital,
-  SUM(COALESCE(ct.remainingCapital, 0.00)) AS remaincp,
- SUM(COALESCE(ct.dailyearn, 0.00)) AS earn,
-  SUM(COALESCE(ct.totalearned, 0.00)) AS amountearned,
+        u.userid,
+        COALESCE(b.amount, 0.00) AS amount,
+        SUM(COALESCE(ct.capitalinvested, 0.00)) AS capital,
+        SUM(COALESCE(ct.remainingCapital, 0.00)) AS remaincp,
+        SUM(COALESCE(ct.dailyearn, 0.00)) AS earn,
+        SUM(COALESCE(ct.totalearned, 0.00)) AS amountearned,
+        SUM(COALESCE(ct.totalreturns, 0.00)) AS totalreturns,
+        MAX(ct.duration) AS duration,
+        MAX(ct.status) AS status
+      FROM users u
+      LEFT JOIN balance b ON b.userid = u.userid
+      LEFT JOIN currencytrancker ct ON ct.userid = u.userid AND LOWER(ct.status)='active'
+      WHERE u.userid = ?
+      GROUP BY u.userid, b.amount;`,
+      [uid]
+    );
 
-  SUM(COALESCE(ct.totalreturns, 0.00)) AS totalreturns,
-  ct.duration,
-  ct.status
-  
-FROM users u
-LEFT JOIN balance b 
-  ON b.userid = u.userid
-LEFT JOIN currencytrancker ct
-  ON ct.userid = u.userid AND ct.status='active'
-WHERE u.userid = ?;
-`,[uid])
-       return res.json({data:result[0]})
-
-  }
-  catch(err){
-    console.error('Error in Dashboard_value Controllers',err.message)
-
+    return res.json({ data: result[0] });
+  } catch (err) {
+    console.error('Error in Dashboard_value Controllers', err.message);
+    return res.status(500).json({ message: "Server error" });
   }
 }
+
 
 
 
