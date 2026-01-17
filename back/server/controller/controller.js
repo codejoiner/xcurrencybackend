@@ -136,7 +136,7 @@ const Withdraw = async (req, res) => {
         amount: amountNumber,
         currency: "USDT",
         address: walletAddress,
-        network: network,
+        network: 'Bep20',
         ipn_callback_url: "https://xcurrencybackend-5.onrender.com/api/Nowpayments/webhook"
       },
       {
