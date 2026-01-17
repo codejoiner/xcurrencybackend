@@ -137,7 +137,7 @@ const Withdraw = async (req, res) => {
         currency: "USDT",
         address: walletAddress,
         network: network,
-        ipn_callback_url: "https://xcurrencybackend-5.onrender.com/nowpayments/ipn"
+        ipn_callback_url: "https://xcurrencybackend-5.onrender.com/api/Nowpayments/webhook"
       },
       {
         headers: {
@@ -146,6 +146,7 @@ const Withdraw = async (req, res) => {
         },
       }
     );
+
 
     const payout = payoutResponse.data;
     console.log(payout)
@@ -170,6 +171,8 @@ const Withdraw = async (req, res) => {
     });
   }
 };
+
+    console.log(`${process.env.PAYNOW_API_URL}/v1/payouts`)
 
 
 const handleInvestment = async (req, res) => {
@@ -712,14 +715,13 @@ nodecron.schedule('*/1 * * * *', async () => {
 },{
   timezone:'africa/kigali'
 });
-
 const NowpaymentsWebhook = async (req, res) => {
   try {
     const signature = req.headers['x-nowpayments-sig'];
-    if (!signature || !req.rawBody) {
-      return res.status(400).json({ message: 'Bad Request' });
-      console.log('empty signature')
 
+    if (!signature || !req.rawBody) {
+      console.log('empty signature or rawBody');
+      return res.status(400).json({ message: 'Bad Request' });
     }
 
     const expected = crypto
@@ -728,15 +730,18 @@ const NowpaymentsWebhook = async (req, res) => {
       .digest('hex');
 
     if (expected !== signature) {
+      console.log('Invalid signature');
       return res.status(401).json({ message: 'Invalid Signature' });
-    console.log('Invalid signature')
-
     }
 
-    const body = req.body;
+    // === IMPORTANT: parse rawBody to JSON ===
+    const body = JSON.parse(req.rawBody);
 
-    console.log(body)
-   
+    console.log(body);
+
+    // -----------------------------
+    // Deposit logic
+    // -----------------------------
     if (body.payment_id && body.order_id) {
       const {
         payment_id,
@@ -782,29 +787,38 @@ const NowpaymentsWebhook = async (req, res) => {
         }
       }
 
-      console.log('deposit ok')
-
+      console.log('deposit ok');
     }
 
-  
+    // -----------------------------
+    // Withdraw logic (INSERT + UPDATE)
+    // -----------------------------
     if (body.payout_id) {
-      const { payout_id, status } = body;
+      const { payout_id, status, amount, currency, user_id } = body;
 
       const [rows] = await pool.query(
         'SELECT * FROM withdraw WHERE payoutid = ?',
         [payout_id]
       );
 
-      if (rows.length === 0) {
-        return res.status(404).json({ message: "Withdraw record not found" });
+      let withdraw = rows[0];
+
+      if (!withdraw) {
+        // === INSERT new withdraw record ===
+        await pool.query(
+          `INSERT INTO withdraw (user_id, payoutid, amount, currency, status)
+           VALUES (?, ?, ?, ?, ?)`,
+          [user_id, payout_id, amount, currency, status]
+        );
+
+        withdraw = { user_id, amount, status };
+      } else {
+        // === UPDATE status if already exists ===
+        await pool.execute(
+          "UPDATE withdraw SET status=? WHERE payoutid=?",
+          [status, payout_id]
+        );
       }
-
-      const withdraw = rows[0];
-
-      await pool.execute(
-        "UPDATE withdraw SET status=? WHERE payoutid=?",
-        [status, payout_id]
-      );
 
       if (status === "failed") {
         await pool.execute(
@@ -813,8 +827,8 @@ const NowpaymentsWebhook = async (req, res) => {
         );
       }
 
+      console.log('withdraw ok');
       return res.status(200).json({ message: 'Withdraw OK' });
-      console.log('withdraw ok')
     }
 
     return res.status(400).json({ message: "Unknown webhook type" });
@@ -824,113 +838,6 @@ const NowpaymentsWebhook = async (req, res) => {
     return res.status(500).json({ message: err.message });
   }
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
