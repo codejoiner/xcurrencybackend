@@ -139,7 +139,6 @@ const Register = async (req, res) => {
     });
 
   } catch (err) {
-    console.log(err)
 
     console.error('Register Error:', err.message);
     return res.status(500).json({
@@ -183,7 +182,6 @@ const Login = async (req, res) => {
         }
     }
   } catch (err) {
-    console.log(process.env.HOST,process.env.DBNAME)
     console.error("Error in Login Controller:", err.message);
     return res.status(500).json({ message: "Login failed Try again!" });
   }

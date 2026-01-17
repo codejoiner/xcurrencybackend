@@ -6,8 +6,11 @@ const  fs= require('fs')
 const pool = mysql.createPool({
   host: process.env.HOST,
   user: process.env.DBUSER,
+  
   password: process.env.DBPWD,
+  port:process.env.DBPORT,
   database: process.env.DBNAME,
+
   waitForConnections: true,
   connectionLimit: 5,
   connectTimeout: 15000,
