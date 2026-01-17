@@ -11,7 +11,7 @@ dot_env.config()
 
 
 
-app.use(morgan(process.env.ISINPRODUCTION ? 'combined':'dev'))
+app.use(morgan(process.env.ISINPRODUCTION==='production' ? 'dev':'combined'))
 
 
 const pool=require('./connection/conn')
@@ -21,7 +21,7 @@ const routes=require('./routes/routes')
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }));
 
-const allowed_origin=process.env.ISINPRODUCT=='production'? '':'http://localhost:5173'
+const allowed_origin=process.env.ISINPRODUCT=='production'? 'https://xcurrency.vercel.app':'http://localhost:5173'
 
 app.use(cors({
     origin:allowed_origin,
