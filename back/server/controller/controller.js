@@ -71,7 +71,6 @@ async function DepositAddress(req, res) {
 }
 
 
-const axios = require('axios');
 
 const Withdraw = async (req, res) => {
   const minamount = 5;
