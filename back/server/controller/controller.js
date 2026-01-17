@@ -123,7 +123,7 @@ const Withdraw = async (req, res) => {
    
     const authResponse = await axios.post(`${process.env.PAYNOW_API_URL}/v1/auth`, {
       email: process.env.NOWPAYMENTS_EMAIL,
-      password: process.env.NOWPAYMENTS_PASSWORD
+      password: process.env.NOWPAYMENTSPASSWORD
     });
 
     const jwtToken = authResponse.data.token;
