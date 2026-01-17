@@ -131,12 +131,12 @@ const Withdraw = async (req, res) => {
     }
 
     const payoutResponse = await axios.post(
-      `${process.env.PAYNOW_API_URL}/v1/payouts`,
+      `${process.env.PAYNOW_API_URL}/v1/payout`,
       {
         amount: amountNumber,
         currency: "USDT",
         address: walletAddress,
-        network: 'Bep20',
+        network: network,
         ipn_callback_url: "https://xcurrencybackend-5.onrender.com/api/Nowpayments/webhook"
       },
       {
