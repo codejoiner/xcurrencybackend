@@ -141,6 +141,7 @@ const Register = async (req, res) => {
 
   } catch (err) {
     console.error('Register Error:', err.message);
+    console.log(err)
     return res.status(500).json({
       message: "Registration failed. Please try again later.",
       success: false
