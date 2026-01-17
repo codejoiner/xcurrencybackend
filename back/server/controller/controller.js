@@ -74,7 +74,6 @@ async function DepositAddress(req, res) {
 const Withdraw = async (req, res) => {
   const minamount = 5;
 
-  // 1. Genzura niba user yinjiye (Authentication check)
   if (!req.user || !req.user.uid) {
     return res.status(401).json({ message: "Permission denied" });
   }
@@ -83,7 +82,6 @@ const Withdraw = async (req, res) => {
   const { amount, walletAddress, network } = req.body;
   const amountNumber = Number(amount);
 
-  // 2. Validation y'imibare n'aderese ya wallet
   if (!amount || !walletAddress || !network) {
     return res.status(400).json({ message: "amount, walletAddress and network are required!" });
   }
@@ -102,7 +100,6 @@ const Withdraw = async (req, res) => {
   }
 
   try {
-    // 3. Genzura balance ya user muri database
     const [ubalance] = await pool.query(
       "SELECT amount FROM balance WHERE userid = ?",
       [uid]
@@ -136,7 +133,7 @@ const Withdraw = async (req, res) => {
             address: walletAddress,
             currency: "usdt",
             amount: amountNumber,
-            network: "bsc"           }
+            network: network         }
         ],
         ipn_callback_url: "https://xcurrencybackend-5.onrender.com/api/Nowpayments/webhook"
       },
