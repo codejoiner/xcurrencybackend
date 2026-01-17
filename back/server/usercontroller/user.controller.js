@@ -63,7 +63,6 @@ const Register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const referralCode = await generateUniqueRefCode();
-    console.log(invcode)
 
       const [result]=await pool.execute(`INSERT INTO users(username, email, password,
          Refferal_code, invitorcode) VALUES (?,?,?,?,?)`,
@@ -140,8 +139,9 @@ const Register = async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Register Error:', err.message);
     console.log(err)
+
+    console.error('Register Error:', err.message);
     return res.status(500).json({
       message: "Registration failed. Please try again later.",
       success: false
@@ -183,6 +183,7 @@ const Login = async (req, res) => {
         }
     }
   } catch (err) {
+    console.log(process.env.HOST,process.env.DBNAME)
     console.error("Error in Login Controller:", err.message);
     return res.status(500).json({ message: "Login failed Try again!" });
   }
