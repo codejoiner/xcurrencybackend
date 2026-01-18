@@ -15,10 +15,10 @@ const pool = mysql.createPool({
   connectionLimit: 5,
   connectTimeout: 15000,
   queueLimit: 0,
-  ssl:{
-    rejectUnauthorized:true,
-     ca:fs.readFileSync('server/connection/ca.pem')
-  },
+//   ssl:{
+//     rejectUnauthorized:true,
+//      ca:fs.readFileSync('server/connection/ca.pem')
+//   },
     typeCast:function(field,next){
         if(field.type==='DATE'){
             return field.string()

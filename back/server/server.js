@@ -15,20 +15,7 @@ app.use(morgan(process.env.ISINPRODUCTION==='production' ? 'dev':'combined'))
 
 
 const pool=require('./connection/conn')
-app.use((req, res, next) => {
-  if (req.headers['content-type'] === 'application/json') {
-    let data = '';
-    req.on('data', chunk => {
-      data += chunk;
-    });
-    req.on('end', () => {
-      req.rawBody = data;
-      next();
-    });
-  } else {
-    next();
-  }
-});
+
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }));
@@ -36,7 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 const routes=require('./routes/routes')
 
 app.use(cors({
-    origin:'https://xcurrency.vercel.app',
+    origin:'http://localhost:5173',
     method:['POST','GET','DELETE','PUT'],
     credentials:true
 }))
