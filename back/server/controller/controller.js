@@ -8,6 +8,7 @@ const nodecron=require('node-cron');
 const {CreditDBwithnewBalance}=require('../credituser/creditsuser')
 
 const { handlreffallogic,TrackerLevelUnlockedHistory } = require("./refferal/reffal");
+const { enableCompileCache } = require("module");
 
 
 
@@ -69,101 +70,118 @@ async function DepositAddress(req, res) {
   }
 }
 
+  console.log(process.env.NOWPAYMENTSEMAIL,process.env.NOWPAYMENTSPASSWORD)
 
+
+  
 
 const Withdraw = async (req, res) => {
   const minamount = 5;
-
-  if (!req.user || !req.user.uid) {
-    return res.status(401).json({ message: "Permission denied" });
-  }
-
   const { uid } = req.user;
-  const { amount, walletAddress, network } = req.body;
+
+  const { amount, walletAddress } = req.body;
+
   const amountNumber = Number(amount);
 
-  if (!amount || !walletAddress || !network) {
-    return res.status(400).json({ message: "amount, walletAddress and network are required!" });
-  }
+  if (!uid) return res.status(401).json({ message: "Permission denied" });
+  if (!amount || !walletAddress)
+    return res.status(400).json({ message: "Missing fields" });
 
-  if (amountNumber < minamount) {
-    return res.status(400).json({ message: `MINIMUM WITHDRAW ${minamount} USDT` });
-  }
-
-  if (isNaN(amountNumber) || amountNumber <= 0) {
-    return res.status(400).json({ message: "Invalid withdraw amount" });
-  }
-
-  const regex = /^[a-zA-Z0-9]+$/;
-  if (!regex.test(walletAddress) || walletAddress.trim().length < 10) {
-    return res.status(400).json({ message: "Invalid wallet address format!" });
-  }
+  if (isNaN(amountNumber) || amountNumber < minamount)
+    return res.status(400).json({ message: "Invalid amount" });
 
   try {
-    const [ubalance] = await pool.query(
+    const [rows] = await pool.query(
       "SELECT amount FROM balance WHERE userid = ?",
       [uid]
     );
 
-    if (!ubalance || ubalance.length === 0) {
-      return res.status(404).json({ message: "User balance not found" });
-    }
+    if (!rows.length || amountNumber > rows[0].amount)
+      return res.status(400).json({ message: "Insufficient funds" });
 
-    const userbalance = parseFloat(ubalance[0].amount);
-
-    if (amountNumber > userbalance) {
-      return res.status(400).json({ message: "Insufficient Funds" });
-    }
-
-   
-    const authResponse = await axios.post(`${process.env.PAYNOW_API_URL}/v1/auth`, {
-      email: process.env.NOWPAYMENTSEMAIL,
-      password: process.env.NOWPAYMENTSPASSWORD
-    });
-
-    const jwtToken = authResponse.data.token;
-
-  
-    const payoutResponse = await axios.post(
-      `${process.env.PAYNOW_API_URL}/v1/payout`,
-      {
-        withdrawals: [
-          {
-            address: walletAddress,
-            currency: "usdt",
-            amount: amountNumber,
-            network: network.toUpperCase()       }
-        ],
-        ipn_callback_url: "https://xcurrencybackend-5.onrender.com/api/Nowpayments/webhook"
-      },
-      {
-        headers: {
-          "x-api-key": process.env.APIKEY,
-          "Authorization": `Bearer ${jwtToken}`,
-          "Content-Type": "application/json",
-        },
-      }
+    await pool.query(
+      "UPDATE balance SET amount = amount - ? WHERE userid = ?",
+      [amountNumber, uid]
     );
 
     await pool.query(
-        "UPDATE balance SET amount = amount - ? WHERE userid = ?",
-        [amountNumber, uid]
+      "INSERT INTO withdraw (user_id, amount, walletaddress) VALUES (?, ?, ?)",
+      [uid, amountNumber, walletAddress]
     );
 
     return res.status(200).json({
-      message: "Withdrawal initiated successfully!",
+      message: "Withdraw request saved. It will be processed soon."
     });
 
   } catch (error) {
-    console.error("Error details:", error.response?.data || error.message);
-    
-    const errorMessage = error.response?.data?.message || "Internal Server Error";
-    return res.status(error.response?.status || 500).json({
-      message: "Withdrawal failed",
-      details: errorMessage
-    });
+    console.error(error);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
+
+
+const processWithdrawals = async () => {
+  const [requests] = await pool.query(
+    `SELECT withdraw_id, user_id, amount, walletaddress FROM withdraw WHERE status='pending'`
+  );
+
+  for (const req of requests) {
+
+    try {
+      const authResponse = await axios.post(
+        `${process.env.PAYNOW_API_URL}/v1/auth`,
+        {
+          email: process.env.NOWPAYMENTSEMAIL,
+          password: process.env.NOWPAYMENTSPASSWORD
+        }
+      );
+
+      const jwtToken = authResponse.data.token;
+
+      const payout = await axios.post(
+        `${process.env.PAYNOW_API_URL}/v1/payout`,
+        {
+          withdrawals: [
+            {
+              address: req.walletaddress,
+              currency: "usdtbsc", 
+              amount: req.amount
+            }
+          ]
+        },
+        {
+          headers: {
+            "Authorization": `Bearer ${jwtToken}`,
+             "x-api-key": process.env.APIKEY,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      await pool.query(
+        "UPDATE withdraw SET status = 'processing', payoutid = ? WHERE withdraw_id = ?",
+        [payout.data.id, req.withdraw_id]
+      );
+
+      console.log("Payout initiated:", payout.data.id);
+
+    } catch (error) {
+      console.error("Payout failed:", error.response?.data || error.message);
+
+      await pool.query(
+        "UPDATE withdraw SET status = 'failed' WHERE withdraw_id = ?",
+        [req.withdraw_id]
+      );
+
+      await pool.query(
+        "UPDATE balance SET amount = amount + ? WHERE userid = ?",
+        [req.amount, req.user_id]
+      );
+    }
+  }
+};
+
+
 
 
 const handleInvestment = async (req, res) => {
@@ -691,175 +709,6 @@ const Refferalstatus= async(req,res)=>{
 }
 
 
-
-
-
-
-
-
-
-nodecron.schedule('*/1 * * * *', async () => {
-  await HandleCurrencyEarnTracker()
-  await handlreffallogic()
-   await DeleteExpiredToken()
-   TrackerLevelUnlockedHistory()
-},{
-  timezone:'africa/kigali'
-});
-const NowpaymentsWebhook = async (req, res) => {
-  try {
-    const signature = req.headers['x-nowpayments-sig'];
-
-    if (!signature || !req.rawBody) {
-      console.log('empty signature or rawBody');
-      return res.status(400).json({ message: 'Bad Request' });
-    }
-
-    const expected = crypto
-      .createHmac('sha512', process.env.IPNKEY)
-      .update(req.rawBody)
-      .digest('hex');
-
-    if (expected !== signature) {
-      console.log('Invalid signature');
-      return res.status(401).json({ message: 'Invalid Signature' });
-    }
-
-    // === IMPORTANT: parse rawBody to JSON ===
-    const body = JSON.parse(req.rawBody);
-
-    console.log(body);
-
-    // -----------------------------
-    // Deposit logic
-    // -----------------------------
-    if (body.payment_id && body.order_id) {
-      const {
-        payment_id,
-        payment_status,
-        pay_amount,
-        pay_currency,
-        order_id,
-      } = body;
-
-      const [rows] = await pool.query(
-        'SELECT * FROM deposits WHERE paymentid = ?',
-        [payment_id]
-      );
-
-      let deposit = rows[0];
-
-      if (!deposit) {
-        await pool.query(
-          `INSERT INTO deposits (user_id, paymentid, coin, paid_amount, status, credited)
-           VALUES (?,?,?,?,?,0)`,
-          [order_id, payment_id, pay_currency, pay_amount, payment_status]
-        );
-
-        deposit = { user_id: order_id, paid_amount: pay_amount, credited: 0 };
-      } else {
-        await pool.query(
-          'UPDATE deposits SET status=? WHERE paymentid=?',
-          [payment_status, payment_id]
-        );
-      }
-
-      if (payment_status === 'finished' && deposit.credited === 0) {
-        const credited = await CreditDBwithnewBalance(
-          deposit.paid_amount,
-          deposit.user_id
-        );
-
-        if (credited) {
-          await pool.query(
-            'UPDATE deposits SET credited=1 WHERE paymentid=?',
-            [payment_id]
-          );
-        }
-      }
-
-      console.log('deposit ok');
-    }
-
-    // -----------------------------
-    // Withdraw logic (INSERT + UPDATE)
-    // -----------------------------
-    if (body.payout_id) {
-      const { payout_id, status, amount, currency, user_id } = body;
-
-      const [rows] = await pool.query(
-        'SELECT * FROM withdraw WHERE payoutid = ?',
-        [payout_id]
-      );
-
-      let withdraw = rows[0];
-
-      if (!withdraw) {
-        // === INSERT new withdraw record ===
-        await pool.query(
-          `INSERT INTO withdraw (user_id, payoutid, amount, currency, status)
-           VALUES (?, ?, ?, ?, ?)`,
-          [user_id, payout_id, amount, currency, status]
-        );
-
-        withdraw = { user_id, amount, status };
-      } else {
-        // === UPDATE status if already exists ===
-        await pool.execute(
-          "UPDATE withdraw SET status=? WHERE payoutid=?",
-          [status, payout_id]
-        );
-      }
-
-      if (status === "failed") {
-        await pool.execute(
-          "UPDATE balance SET amount = amount + ? WHERE userid = ?",
-          [withdraw.amount, withdraw.user_id]
-        );
-      }
-
-      console.log('withdraw ok');
-      return res.status(200).json({ message: 'Withdraw OK' });
-    }
-
-    return res.status(400).json({ message: "Unknown webhook type" });
-
-  } catch (err) {
-    console.error('NOWPayments webhook error', err);
-    return res.status(500).json({ message: err.message });
-  }
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const HandleCurrencyEarnTracker = async () => {
   try {
     const today = new Date().toISOString().slice(0,10)
@@ -961,6 +810,49 @@ const HandleCurrencyEarnTracker = async () => {
 
 
 
+const NowpaymentsWebhook = async (req, res) => {
+  try {
+    const signature = req.headers['x-nowpayments-sig'];
+
+    if (!signature || !req.rawBody) {
+      return res.status(400).json({ message: 'Bad Request' });
+    }
+
+    const expected = crypto
+      .createHmac('sha512', process.env.IPNKEY)
+      .update(req.rawBody)
+      .digest('hex');
+
+    if (expected !== signature) {
+      return res.status(401).json({ message: 'Invalid Signature' });
+    }
+
+    const body = JSON.parse(req.rawBody);
+     
+    
+  } catch (err) {
+    console.error('NOWPayments webhook error', err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+// Fungura interval
+setInterval(async () => {
+  try {
+    await processWithdrawals(); 
+    } catch (err) {
+    console.error("Error processing withdrawals:", err);
+  }
+}, 2000); // buri 1 second
+
+nodecron.schedule('*/1 * * * *', async () => {
+  await HandleCurrencyEarnTracker()
+  await handlreffallogic()
+   await DeleteExpiredToken()
+
+},{
+  timezone:'africa/kigali'
+});
 
 
 
@@ -980,3 +872,4 @@ module.exports = {
   VerifylinkTokenANDResetPassword,
   Refferalstatus,
   };
+
