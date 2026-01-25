@@ -66,7 +66,7 @@ const Register = async (req, res) => {
 
       const [result]=await pool.execute(`INSERT INTO users(username, email, password,
          Refferal_code, invitorcode) VALUES (?,?,?,?,?)`,
-        [username,email,hashedPassword,referralCode,invcode||null])
+        [username,email,hashedPassword,referralCode,invcode])
 
     const newuserid=result.insertId
 

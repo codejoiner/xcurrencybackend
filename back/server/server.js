@@ -4,6 +4,7 @@ const dot_env=require('dotenv')
 const app=express()
 const morgan=require('morgan')
 
+const routes=require('./routes/routes')
 
 dot_env.config()
 
@@ -11,7 +12,7 @@ dot_env.config()
 
 
 
-app.use(morgan(process.env.ISINPRODUCTION==='production' ? 'dev':'combined'))
+app.use(morgan(process.env.ISINPRODUCTION==='production' ? 'combined':'dev'))
 
 
 const pool=require('./connection/conn')
@@ -19,28 +20,60 @@ const pool=require('./connection/conn')
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }));
-
-const routes=require('./routes/routes')
-
+  const alllowedorigin= process.env.ISINPRODUCTION==='production' 
+  ? 'https://xcurrency.vercel.app':'http://localhost:5173'
 app.use(cors({
-    origin:'https://xcurrency.vercel.app',
+    origin:alllowedorigin,
     method:['POST','GET','DELETE','PUT'],
     credentials:true
 }))
+
+const rateLimitMap = new Map();
+const blockedIPs = new Set();
+
+const rateLimit = (req, res, next) => {
+  const ip = req.ip;
+  console.log(ip)
+
+  
+  if (blockedIPs.has(ip)) {
+    return res.status(429).json({ message: "Blocked due to repeated violations." });
+  }
+
+  const now = Date.now();
+  const windowTime = 60 * 1000;
+  const maxRequests = 50; 
+
+  const record = rateLimitMap.get(ip) || { count: 0, startTime: now };
+
+  
+  if (now - record.startTime > windowTime) {
+    record.count = 1;
+    record.startTime = now;
+  } else {
+    record.count += 1;
+  }
+
+  rateLimitMap.set(ip, record);
+
+  
+  if (record.count > maxRequests) {
+    blockedIPs.add(ip);
+
+  
+    setTimeout(() => blockedIPs.delete(ip), 10 * 60 * 1000);
+
+    return res.status(429).json({
+      message: "Too many requests. Blocked for 10 minutes."
+    });
+  }
+
+  next();
+};
+
+ app.use(rateLimit)
+
 app.use('/',routes)
-
-
-
-
-
-
-
-      
-
-
-
-
-
 
 
 
@@ -64,4 +97,4 @@ const shutdowngracefull= async(error)=>{
 process.on('uncaughtException',shutdowngracefull);
 process.on('unhandledRejection', shutdowngracefull);
 
-module.export=app;
+module.exports=app;

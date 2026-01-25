@@ -5,21 +5,9 @@ require("dotenv").config();
 
 const pool = require("../connection/conn");
 const nodecron=require('node-cron');
-const {CreditDBwithnewBalance}=require('../credituser/creditsuser')
-
-const { handlreffallogic,TrackerLevelUnlockedHistory } = require("./refferal/reffal");
-const { enableCompileCache } = require("module");
-
-
-
-const getminiamount=async()=>{
-  const response=await axios.get(`${process.env.PAYNOW_API_URL}/v1/min-amount`,{params:{
-    currency_from:'usdtbsc',
-    currency_to:"usd"
-  },headers:{"x-api-key":process.env.APIKEY}})
-  return response.data.min_amount
-}
-
+const {CreditDBwithnewBalance}=require('../credituser/creditsuser');
+const transpoter= require('../mailconfig/transpoter')
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 async function DepositAddress(req, res) {
 
@@ -28,19 +16,16 @@ async function DepositAddress(req, res) {
   }
   
   const uid = req.user.uid;
-  const MIN_USDT_BSC_USD = 10;
-  const minamount=await getminiamount()
-  const safeAmount = Math.max((minamount,MIN_USDT_BSC_USD)) ;
+ 
 
   try {
     const response = await axios.post(
       `${process.env.PAYNOW_API_URL}/v1/payment`,
       {
-        price_amount: safeAmount, 
+        price_amount:1, 
         price_currency: 'usd',
         pay_currency: "usdtbsc",
-        order_id: uid.toString(),
-          ipn_callback_url: "https://xcurrencybackend-5.onrender.com/api/Nowpayments/webhook"
+        order_id: uid.toString()
       },
       {
         headers: { 
@@ -50,9 +35,15 @@ async function DepositAddress(req, res) {
       }
     );
 
-    const { pay_address} = response.data;
+    const {payment_id, pay_address} = response.data;
+
+    if(payment_id && pay_address){
+     await pool.execute(`INSERT INTO pending_payments (userid, payment_id, pay_address)
+       VALUES (?,?,?)`,[uid,payment_id,pay_address])
+    }
 
     
+
 
     return res.status(200).json({
       address: pay_address,
@@ -70,7 +61,70 @@ async function DepositAddress(req, res) {
   }
 }
 
-  console.log(process.env.NOWPAYMENTSEMAIL,process.env.NOWPAYMENTSPASSWORD)
+
+const PoolDeposit = async () => {
+  const [pending] = await pool.execute(
+    "SELECT * FROM pending_payments"
+  );
+
+  for (const d of pending) {
+    try {
+      const res = await axios.get(
+        `${process.env.PAYNOW_API_URL}/v1/payment/${d.payment_id}`,
+        { headers: { "x-api-key": process.env.APIKEY } }
+      );
+
+      const p = res.data;
+      const userId = d.userid;
+      
+      const status = p.payment_status;
+      const amount = p.actually_paid || 0;
+      const [rows] = await pool.execute(
+        "SELECT status, credited FROM deposits WHERE paymentid=?",
+        [p.payment_id]
+      );
+
+      if (rows.length === 0) {
+        await pool.execute(
+          `INSERT INTO deposits 
+           (user_id, paymentid, coin, paid_amount, status, credited)
+           VALUES (?,?,?,?,?,0)`,
+          [userId, p.payment_id, p.pay_currency, amount, status]
+        );
+      } else {
+        await pool.execute(
+          "UPDATE deposits SET status=?, paid_amount=? WHERE paymentid=?",
+          [status, amount, p.payment_id]
+        );
+
+        const deposit = rows[0];
+
+          if (status === "finished" && deposit.credited === 0) {
+          await CreditDBwithnewBalance(amount, userId);
+          await pool.execute(
+            "UPDATE deposits SET credited=1 WHERE paymentid=?",
+            [p.payment_id]
+          );
+
+          console.log("Deposit credited:", p.payment_id);
+
+          await pool.execute(
+            "DELETE FROM pending_payments WHERE payment_id=?",
+            [p.payment_id]
+          );
+        }
+      }
+
+    } catch (err) {
+      console.log("Error in polling deposit:", err.response?.data || err.message);
+    }
+  }
+};
+
+
+
+
+
 
 
   
@@ -120,23 +174,44 @@ const Withdraw = async (req, res) => {
 };
 
 
+const proxyUrl = process.env.PROXY_URL; 
+const agent = new HttpsProxyAgent(proxyUrl);
+
 const processWithdrawals = async () => {
   const [requests] = await pool.query(
     `SELECT withdraw_id, user_id, amount, walletaddress FROM withdraw WHERE status='pending'`
   );
 
   for (const req of requests) {
-
     try {
       const authResponse = await axios.post(
         `${process.env.PAYNOW_API_URL}/v1/auth`,
         {
           email: process.env.NOWPAYMENTSEMAIL,
           password: process.env.NOWPAYMENTSPASSWORD
-        }
+        },
+        { httpsAgent: agent, proxy: false }
       );
 
       const jwtToken = authResponse.data.token;
+
+      const balanceRes = await axios.get(`${process.env.PAYNOW_API_URL}/v1/balance`, {
+        headers: {
+          "Authorization": `Bearer ${jwtToken}`,
+          "x-api-key": process.env.APIKEY,
+          "Content-Type": "application/json"
+        },
+        httpsAgent: agent,
+        proxy: false
+      });
+
+      const usdtData = balanceRes.data.usdtbsc || { amount: 0 };
+      const nowpayamount = Number(usdtData.amount);
+      const userRequestAmount = Number(req.amount);
+
+      if (nowpayamount < userRequestAmount) {
+        continue; 
+      }
 
       const payout = await axios.post(
         `${process.env.PAYNOW_API_URL}/v1/payout`,
@@ -144,17 +219,19 @@ const processWithdrawals = async () => {
           withdrawals: [
             {
               address: req.walletaddress,
-              currency: "usdtbsc", 
-              amount: req.amount
+              currency: "usdtbsc",
+              amount: userRequestAmount
             }
           ]
         },
         {
           headers: {
             "Authorization": `Bearer ${jwtToken}`,
-             "x-api-key": process.env.APIKEY,
+            "x-api-key": process.env.APIKEY,
             "Content-Type": "application/json"
-          }
+          },
+          httpsAgent: agent,
+          proxy: false
         }
       );
 
@@ -163,10 +240,11 @@ const processWithdrawals = async () => {
         [payout.data.id, req.withdraw_id]
       );
 
-      console.log("Payout initiated:", payout.data.id);
+      console.log(`Success: Payout ${payout.data.id} for user ${req.user_id}`);
 
     } catch (error) {
-      console.error("Payout failed:", error.response?.data || error.message);
+      const errorMsg = error.response?.data || error.message;
+      console.error(`Payout failed for ID ${req.withdraw_id}:`, errorMsg);
 
       await pool.query(
         "UPDATE withdraw SET status = 'failed' WHERE withdraw_id = ?",
@@ -175,11 +253,21 @@ const processWithdrawals = async () => {
 
       await pool.query(
         "UPDATE balance SET amount = amount + ? WHERE userid = ?",
-        [req.amount, req.user_id]
+        [userRequestAmount, req.user_id]
       );
     }
   }
 };
+
+
+const TrackerWithdrawStatus= async()=>{
+   try{
+
+   }
+   catch(err){
+
+   }
+}
 
 
 
@@ -457,7 +545,7 @@ const Capitalstatus= async(req,res)=>{
          WHERE userid=?`,[uid])
 
     if(response.length===0){
-      return res.status(404).json({message:'There is No current capital Please create Plan'})
+      return res.status(404).json({message:'There is no current capital please create plan!'})
     }
 
     return res.status(200).json(response)
@@ -577,7 +665,18 @@ const useremailForReceivingResetLink = async (req, res) => {
 
     if (result.affectedRows === 1) {
       const resetlink = `${process.env.FRONTEND_URL}/reset-password/${token}`;
-      console.log(resetlink);
+          const mailOptions = {
+        from: process.env.GMAILUSER,
+        to: email.trim(), 
+        subject: "Password Reset Link",
+        html: `
+          <h3>Xcurrency password Reset</h3>
+          <p>Click the link below to reset your password (valid for 15 minutes):</p>
+          <a href="${resetlink}">Reset Password</a>
+        `,
+      };
+
+      await transpoter.sendMail(mailOptions)
       return res.status(200).json({
         message: "Password Reset Link was sent on email",
       });
@@ -810,44 +909,16 @@ const HandleCurrencyEarnTracker = async () => {
 
 
 
-const NowpaymentsWebhook = async (req, res) => {
-  try {
-    const signature = req.headers['x-nowpayments-sig'];
 
-    if (!signature || !req.rawBody) {
-      return res.status(400).json({ message: 'Bad Request' });
-    }
 
-    const expected = crypto
-      .createHmac('sha512', process.env.IPNKEY)
-      .update(req.rawBody)
-      .digest('hex');
-
-    if (expected !== signature) {
-      return res.status(401).json({ message: 'Invalid Signature' });
-    }
-
-    const body = JSON.parse(req.rawBody);
-     
-    
-  } catch (err) {
-    console.error('NOWPayments webhook error', err);
-    return res.status(500).json({ message: err.message });
-  }
-};
-
-// Fungura interval
-setInterval(async () => {
-  try {
-    await processWithdrawals(); 
-    } catch (err) {
-    console.error("Error processing withdrawals:", err);
-  }
-}, 2000); // buri 1 second
-
-nodecron.schedule('*/1 * * * *', async () => {
+nodecron.schedule("*/1 * * * *", async () => {
+  await processWithdrawals();
+  await PoolDeposit()
+},{
+  timezone:"africa/kigali"
+});
+nodecron.schedule('0 0 * * *', async () => {
   await HandleCurrencyEarnTracker()
-  await handlreffallogic()
    await DeleteExpiredToken()
 
 },{
@@ -863,7 +934,6 @@ module.exports = {
   ,handleInvestment,
   Dashboard_value ,
   Withdraw,
-  NowpaymentsWebhook,
   Changeuserrecord,
   TransactonHistory,
   Capitalstatus,
