@@ -182,6 +182,7 @@ const Login = async (req, res) => {
         }
     }
   } catch (err) {
+    console.log(err)
     console.error("Error in Login Controller:", err.message);
     return res.status(500).json({ message: "Login failed Try again!" });
   }
