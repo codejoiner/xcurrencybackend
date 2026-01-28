@@ -409,7 +409,7 @@ const handleInvestment = async (req, res) => {
     enddate.setDate(starteddate.getDate() + parseInt(duration));
 
     const lastCrediteddate = new Date().toISOString().slice(0, 10);
-    const dailyearn = (amount * 3) / 100;
+    const dailyearn = (amount * 4) / 100;
     const totalreturn=dailyearn*duration
 
 

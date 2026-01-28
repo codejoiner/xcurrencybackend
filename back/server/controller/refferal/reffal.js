@@ -23,7 +23,7 @@ const getlevelvalues = async (req, res) => {
   }
 };
 
-const recordunlockedLevel = async (userid, reward, level) => {
+const recordunlockedLevel = async (userid, reward, level,lastcredit) => {
   try {
     const [existing] = await pool.execute(
       "SELECT id FROM unlockedreward WHERE userid=? AND unlockedlevel=?",
@@ -35,9 +35,9 @@ const recordunlockedLevel = async (userid, reward, level) => {
     }
 
     await pool.execute(
-      `INSERT INTO unlockedreward(userid, reward, unlockedlevel) 
-       VALUES (?,?,?)`,
-      [userid, reward, level]
+      `INSERT INTO unlockedreward(userid, reward, unlockedlevel,lastcrediteddate) 
+       VALUES (?,?,?,?)`,
+      [userid, reward, level,lastcredit]
     );
   } catch (err) {
     console.log("Error in record level ", err.message);
@@ -88,7 +88,7 @@ const Teamchecking = async (userid, level, reward) => {
     }
 
     if (totalcapital >= requiredCapital) {
-      await recordunlockedLevel(userid, reward, level);
+      await recordunlockedLevel(userid, reward, level,today);
     } 
     else {
       await pool.execute(
@@ -97,7 +97,7 @@ const Teamchecking = async (userid, level, reward) => {
         [userid, level]
       );
 
-      await recordunlockedLevel(userid, reward, level);
+      await recordunlockedLevel(userid, reward, level,today);
     }
   } catch (err) {
     console.error(err.message);
