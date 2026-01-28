@@ -1,12 +1,14 @@
+const dot_env=require('dotenv')
+
+dot_env.config()
+
 const express=require('express')
 const cors=require('cors')
-const dot_env=require('dotenv')
 const app=express()
 const morgan=require('morgan')
 
 const routes=require('./routes/routes')
 
-dot_env.config()
 
 
 
