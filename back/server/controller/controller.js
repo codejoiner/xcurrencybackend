@@ -8,8 +8,7 @@ const nodecron=require('node-cron');
 const {CreditDBwithnewBalance}=require('../credituser/creditsuser');
 const transpoter= require('../mailconfig/transpoter')
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const proxyUrl = process.env.PROXY_URL; 
-console.log(proxyUrl)
+const proxyUrl = process.env.PROXY_URL||"http://bivtrcuc:p02jqh10z84o@23.95.150.145:6114/"; 
 const agent = new HttpsProxyAgent(proxyUrl);
 const speakeasy=require('speakeasy')
 
