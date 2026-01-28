@@ -9,8 +9,10 @@ const {CreditDBwithnewBalance}=require('../credituser/creditsuser');
 const transpoter= require('../mailconfig/transpoter')
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const proxyUrl = process.env.PROXY_URL; 
+console.log(proxyUrl)
 const agent = new HttpsProxyAgent(proxyUrl);
 const speakeasy=require('speakeasy')
+
 
 async function DepositAddress(req, res) {
 
