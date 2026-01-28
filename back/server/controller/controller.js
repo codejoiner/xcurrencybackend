@@ -8,6 +8,9 @@ const nodecron=require('node-cron');
 const {CreditDBwithnewBalance}=require('../credituser/creditsuser');
 const transpoter= require('../mailconfig/transpoter')
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const proxyUrl = process.env.PROXY_URL; 
+const agent = new HttpsProxyAgent(proxyUrl);
+const speakeasy=require('speakeasy')
 
 async function DepositAddress(req, res) {
 
@@ -122,12 +125,7 @@ const PoolDeposit = async () => {
 };
 
 
-
-
-
-
-
-  
+ 
 
 const Withdraw = async (req, res) => {
   const minamount = 5;
@@ -174,8 +172,10 @@ const Withdraw = async (req, res) => {
 };
 
 
-const proxyUrl = process.env.PROXY_URL; 
-const agent = new HttpsProxyAgent(proxyUrl);
+
+ 
+
+
 
 const processWithdrawals = async () => {
   const [requests] = await pool.query(
@@ -183,7 +183,10 @@ const processWithdrawals = async () => {
   );
 
   for (const req of requests) {
+    let userRequestAmount = Number(req.amount);
+
     try {
+     
       const authResponse = await axios.post(
         `${process.env.PAYNOW_API_URL}/v1/auth`,
         {
@@ -195,6 +198,7 @@ const processWithdrawals = async () => {
 
       const jwtToken = authResponse.data.token;
 
+    
       const balanceRes = await axios.get(`${process.env.PAYNOW_API_URL}/v1/balance`, {
         headers: {
           "Authorization": `Bearer ${jwtToken}`,
@@ -207,12 +211,17 @@ const processWithdrawals = async () => {
 
       const usdtData = balanceRes.data.usdtbsc || { amount: 0 };
       const nowpayamount = Number(usdtData.amount);
-      const userRequestAmount = Number(req.amount);
 
       if (nowpayamount < userRequestAmount) {
-        continue; 
+        continue;
       }
 
+      await pool.query(
+        "UPDATE withdraw SET status = 'processing' WHERE withdraw_id = ?",
+        [req.withdraw_id]
+      );
+
+     
       const payout = await axios.post(
         `${process.env.PAYNOW_API_URL}/v1/payout`,
         {
@@ -228,6 +237,7 @@ const processWithdrawals = async () => {
           headers: {
             "Authorization": `Bearer ${jwtToken}`,
             "x-api-key": process.env.APIKEY,
+            "x-idempotency-key": req.withdraw_id.toString(),
             "Content-Type": "application/json"
           },
           httpsAgent: agent,
@@ -235,12 +245,35 @@ const processWithdrawals = async () => {
         }
       );
 
+      const payoutid = payout.data.id;
+
+   
       await pool.query(
-        "UPDATE withdraw SET status = 'processing', payoutid = ? WHERE withdraw_id = ?",
-        [payout.data.id, req.withdraw_id]
+        "UPDATE withdraw SET payoutid=? WHERE withdraw_id = ?",
+        [payoutid, req.withdraw_id]
       );
 
-      console.log(`Success: Payout ${payout.data.id} for user ${req.user_id}`);
+      
+      const code = speakeasy.totp({
+        secret: process.env.NOWPAYMENTS_2FA_SECRET,
+        encoding: 'base32'
+      });
+
+      const verifyResponse = await axios.post(
+        `${process.env.PAYNOW_API_URL}/v1/payout/${payoutid}/verify`,
+        { verification_code: code },
+        {
+          headers: {
+            "Authorization": `Bearer ${jwtToken}`,
+            "x-api-key": process.env.APIKEY,
+            "Content-Type": "application/json"
+          },
+          httpsAgent: agent,
+          proxy: false
+        }
+      );
+
+      console.log(`Success: Payout ${payoutid} verified and processing.`);
 
     } catch (error) {
       const errorMsg = error.response?.data || error.message;
@@ -259,17 +292,56 @@ const processWithdrawals = async () => {
   }
 };
 
+const trackeWithdrawstatus = async () => {
+  try {
+    const [withpayoutid] = await pool.execute(
+      "SELECT user_id, withdraw_id, payoutid, amount FROM withdraw WHERE status = 'processing'"
+    );
+    
+    if (withpayoutid.length === 0) return false;
 
-const TrackerWithdrawStatus= async()=>{
-   try{
+    const authRes = await axios.post(`${process.env.PAYNOW_API_URL}/v1/auth`, {
+      email: process.env.NOWPAYMENTSEMAIL,
+      password: process.env.NOWPAYMENTSPASSWORD
+    });
+    
+    const jwtToken = authRes.data.token;
 
-   }
-   catch(err){
+    for (let payid of withpayoutid) {
+      const { payoutid, user_id, amount, withdraw_id } = payid;
 
-   }
-}
+      if (!payoutid) continue;
 
+      const res = await axios.get(
+        `${process.env.PAYNOW_API_URL}/v1/payout/${payoutid}`,
+        {
+          headers: {
+            "Authorization": `Bearer ${jwtToken}`,
+            "x-api-key": process.env.APIKEY
+          }
+        }
+      );
 
+      const data = res.data.withdrawals[0];
+      const status = data.status;
+
+      await pool.execute('UPDATE withdraw SET status=? WHERE withdraw_id=?', [status, withdraw_id]);
+
+      if (status.toLowerCase() === 'rejected' || status.toLowerCase() === 'failed') {
+        await pool.query(
+          "UPDATE balance SET amount = amount + ? WHERE userid = ?",
+          [amount, user_id]
+        );
+      }
+    }
+  } catch (err) {
+    console.log('Error in withdraw status controller', err.response?.data?.message || err.message);
+  }
+};
+
+setInterval(async()=>{
+  trackeWithdrawstatus()
+},5000)
 
 
 const handleInvestment = async (req, res) => {
@@ -321,8 +393,8 @@ const handleInvestment = async (req, res) => {
     }
     const mincapital = 10;
 
- if(amount ==10 && duration !==120){
-    return res.status(400).json({message:`Fixed duration to ${mincapital}USDT is 120 days`})
+ if(amount<=50 && duration !==120){
+    return res.status(400).json({message:`Fixed duration to ${amount} USDT is 120 days`})
     }
    
 
@@ -338,7 +410,7 @@ const handleInvestment = async (req, res) => {
     enddate.setDate(starteddate.getDate() + parseInt(duration));
 
     const lastCrediteddate = new Date().toISOString().slice(0, 10);
-    const dailyearn = (amount * 5) / 100;
+    const dailyearn = (amount * 3) / 100;
     const totalreturn=dailyearn*duration
 
 
@@ -911,7 +983,7 @@ const HandleCurrencyEarnTracker = async () => {
 
 
 
-nodecron.schedule("*/1 * * * *", async () => {
+nodecron.schedule("*/5 * * * * *", async () => {
   await processWithdrawals();
   await PoolDeposit()
 },{

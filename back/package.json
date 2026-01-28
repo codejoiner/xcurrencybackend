@@ -23,6 +23,7 @@
     "mysql2": "^3.15.3",
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.12",
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.11",
+    "speakeasy": "^2.0.0"
   }
 }

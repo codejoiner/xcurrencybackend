@@ -20,9 +20,9 @@ const pool=require('./connection/conn')
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }));
- 
+  
 app.use(cors({
-    origin:"https://xcurrency.vercel.app",
+    origin:"http://localhost:5173",
     method:['POST','GET','DELETE','PUT'],
     credentials:true
 }))
