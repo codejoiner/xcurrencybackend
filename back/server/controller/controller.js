@@ -340,9 +340,7 @@ const trackeWithdrawstatus = async () => {
   }
 };
 
-setInterval(async()=>{
-  trackeWithdrawstatus()
-},5000)
+
 
 
 const handleInvestment = async (req, res) => {
@@ -984,9 +982,10 @@ const HandleCurrencyEarnTracker = async () => {
 
 
 
-nodecron.schedule("*/5 * * * * *", async () => {
+nodecron.schedule("*/30 * * * * *", async () => {
   await processWithdrawals();
   await PoolDeposit()
+   await trackeWithdrawstatus()
 },{
   timezone:"africa/kigali"
 });
