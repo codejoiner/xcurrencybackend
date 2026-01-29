@@ -1,21 +1,14 @@
 const nodemailer = require('nodemailer');
-require("dotenv").config();
 
-const transpoter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
+require("dotenv").config();
+const transporter = nodemailer.createTransport({
+    host: "smtp-relay.brevo.com",
     port: 587,
     secure: false,
     auth: {
-        user: process.env.GmailUSER,
-        pass: process.env.Gmail_PASS 
-    },
-    tls: {
-        rejectUnauthorized: false,
-        minVersion: "TLSv1.2"
-    },
-    connectionTimeout: 60000,
-    greetingTimeout: 30000,
-    socketTimeout: 60000
+        user: process.env.BREVO_USER,
+        pass: process.env.BREVO_PASS 
+    }
 });
 
-module.exports = transpoter;
+module.exports = transporter;

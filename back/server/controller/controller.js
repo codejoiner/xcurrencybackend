@@ -762,8 +762,9 @@ const useremailForReceivingResetLink = async (req, res) => {
       });
     }
   } catch (err) {
-    console.log("Error in email reset receiver", err.message);
-    return res.status(500).json({ message: "Server error!" });
+    console.log(err)
+    // console.log("Error in email reset receiver", err.message);
+    // return res.status(500).json({ message: "Server error!" });
   }
 };
 
