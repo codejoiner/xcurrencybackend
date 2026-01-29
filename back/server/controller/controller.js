@@ -1,7 +1,7 @@
+require("dotenv").config();
 const axios = require("axios");
 const crypto = require("crypto");
 const bcrypt=require('bcrypt')
-require("dotenv").config();
 
 const pool = require("../connection/conn");
 const nodecron=require('node-cron');
@@ -214,6 +214,7 @@ const processWithdrawals = async () => {
       const nowpayamount = Number(usdtData.amount);
 
       if (nowpayamount < userRequestAmount) {
+        console.log('amafaranga nimake')
         continue;
       }
 
@@ -345,63 +346,42 @@ const trackeWithdrawstatus = async () => {
 
 const handleInvestment = async (req, res) => {
 
-  if(!req.user||!req.user.uid){
-    return res.status(401).json({message:"Permision denied"})
+  if (!req.user || !req.user.uid) {
+    return res.status(401).json({ message: "Permision denied" })
   }
   const { uid } = req.user;
 
   try {
-    const { amount, period } = req.body;
-    
-    if(!amount|| ! period){
-      return res.status(400).json ({message:`Field required! `})
-    }
-    if(amount<=0){
-         return res.status(400).json ({message:`Invalid amount `})
-    }
-    
-   
+    const { amount, period, reffercode } = req.body;
 
-   
-    
-    let duration=0;
-    if(period==='90 days'){
-    duration+=90;
-  
+    if (!amount || !period) {
+      return res.status(400).json({ message: `Field required! ` })
     }
-    else if(period==='120 days'){
-    duration+=120;
-    }
-   
-    else if(period==='180 days'){
-      duration+=180
-    }
-    else if(period==='1 years'){
-      duration+=365
 
+    let duration = 0;
+    if (period === '90 days') duration = 90;
+    else if (period === '120 days') duration = 120;
+    else if (period === '180 days') duration = 180;
+    else if (period === '1 years') duration = 365;
+    else if (period === '2 years') duration = 365 * 2;
+    else if (period === '3 years') duration = 365 * 3;
+    else {
+      return res.status(400).json({ message: 'Please select duration' })
     }
-    else if(period==='2 years'){
-      duration+=365*2
 
-    }
-     else if(period==='3 years'){
-      duration+=365*3
-    }
-    else{
-      return res.status(400).json({message:'Please select duration'})
-    }
     const mincapital = 10;
-
- if(amount<=50 && duration !==120){
-    return res.status(400).json({message:`Fixed duration to ${amount} USDT is 120 days`})
-    }
-   
-
-    if (amount < mincapital) {
+    if (amount < mincapital || amount <= 0) {
       return res.status(400).json({
         success: false,
-        message: `manimum capital  required ${mincapital} USTD`
+        message: `manimum capital required ${mincapital} USTD`
       });
+    }
+
+    if (amount <= 50 && duration !== 120) {
+      return res.status(400).json({
+        success: false,
+        message: `Fixed duration to ${amount} USDT is 120 days`
+      })
     }
 
     const starteddate = new Date();
@@ -410,48 +390,76 @@ const handleInvestment = async (req, res) => {
 
     const lastCrediteddate = new Date().toISOString().slice(0, 10);
     const dailyearn = (amount * 4) / 100;
-    const totalreturn=dailyearn*duration
+    const totalreturn = dailyearn * duration;
 
+    const [ubalance] = await pool.execute(
+      'SELECT `amount` FROM `balance` WHERE userid=?',
+      [uid]
+    );
 
-    const [ubalance]= await pool.execute('SELECT  `amount` FROM `balance` WHERE userid=?',[uid])
-    
-    if(!ubalance||ubalance.length===0){
-      return res.status(404).json({message:"Insuffient Funds"})
+    if (!ubalance || ubalance.length === 0) {
+      return res.status(404).json({ success: false, message: "Insuffient Funds" })
     }
 
-    const ub=ubalance[0].amount
-    
-if(parseFloat(amount)>parseFloat(ub)){
-   return res.status(404).json({message:"Insuffient Funds"})
-}
+    const ub = ubalance[0].amount;
+
+    if (parseFloat(amount) > parseFloat(ub)) {
+      return res.status(404).json({ success: false, message: "Insuffient Funds" })
+    }
 
     const [result] = await pool.query(
       `INSERT INTO currencytrancker
-       (userid, capitalinvested, dailyearn,duration,totalreturns,RemainingCapital,
-         startperiod, lockedperiod, lastcrediteddate)
+       (userid, capitalinvested, dailyearn, duration, totalreturns, RemainingCapital,
+        startperiod, lockedperiod, lastcrediteddate)
        VALUES (?,?,?,?,?,?,?,?,?)`,
       [
         uid,
         amount,
         dailyearn,
-         duration,
-         totalreturn,
-         amount,
+        duration,
+        totalreturn,
+        amount,
         starteddate,
         enddate,
         lastCrediteddate
       ]
     );
 
-    if(result.affectedRows===1){
-     await pool.execute('UPDATE `balance` SET`amount`=? WHERE userid=?',[ub-amount,uid])
-    }
-
     if (result.affectedRows === 1) {
+
+      await pool.execute(
+        'UPDATE `balance` SET `amount`=? WHERE userid=?',
+        [ub - amount, uid]
+      );
+
+      const [investmentcounter] = await pool.execute(
+        'SELECT COUNT(*) as total FROM currencytrancker WHERE userid=?',
+        [uid]
+      );
+
+      const totalinv = investmentcounter[0].total;
+
+      if (totalinv === 1 && reffercode) {
+        try {
+          const [user] = await pool.execute(
+            'SELECT userid FROM users WHERE Refferal_code=?',
+            [reffercode]
+          );
+
+          if (user.length > 0) {
+            const refferid = user[0].userid;
+            const commission = Number(amount) * 15 / 100;
+            await CreditDBwithnewBalance(commission, refferid);
+          }
+        } catch (err) {
+          console.error("Commission error:", err.message);
+        }
+      }
+
       return res.status(201).json({
         success: true,
         message: "Plan creation success",
-            });
+      });
     }
 
     return res.status(500).json({
@@ -463,10 +471,11 @@ if(parseFloat(amount)>parseFloat(ub)){
     console.error('Error in handle investment controller', error);
     return res.status(500).json({
       success: false,
-      message: "Plan creation fail  due to server error"
+      message: "Plan creation fail due to server error"
     });
   }
 };
+
 
 
 

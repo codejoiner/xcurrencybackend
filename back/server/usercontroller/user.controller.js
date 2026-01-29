@@ -33,10 +33,7 @@ const Register = async (req, res) => {
   try {
     const { username, email, password, invcode} = req.body;
     if (!username || !email || !password) {
-      return res.status(400).json({
-        message: "All fields are required",
-        success: false
-      });
+      return
     }
 
     if(!regex.test(username,email,password)){
@@ -176,7 +173,7 @@ const Login = async (req, res) => {
     }
 
     if(match){
-        const token=jwt.sign({uid:user.userid,username:user.username,code:user.Refferal_code},process.env.JWTSECRETKEY,{expiresIn:'24h'})
+        const token=jwt.sign({uid:user.userid,username:user.username,code:user.Refferal_code,reffercode:user.invitorcode},process.env.JWTSECRETKEY,{expiresIn:'24h'})
         if(token){
             return res.status(201).json({uToken:token,success:true})
         }
