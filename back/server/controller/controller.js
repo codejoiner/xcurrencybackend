@@ -744,7 +744,7 @@ const useremailForReceivingResetLink = async (req, res) => {
     );
 
     if (result.affectedRows === 1) {
-      const resetlink = `${process.env.FRONTEND_URL}/reset-password/${token}`;
+      const resetlink = `https://xcurrency.vercel.app/reset-password/${token}`;
           const mailOptions = {
         from: process.env.GMAILUSER,
         to: email.trim(), 
@@ -762,9 +762,8 @@ const useremailForReceivingResetLink = async (req, res) => {
       });
     }
   } catch (err) {
-    console.log(err)
-    // console.log("Error in email reset receiver", err.message);
-    // return res.status(500).json({ message: "Server error!" });
+    console.log("Error in email reset receiver", err.message);
+    return res.status(500).json({ message: "Server error!" });
   }
 };
 
