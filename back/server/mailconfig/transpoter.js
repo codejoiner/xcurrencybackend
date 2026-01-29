@@ -1,16 +1,21 @@
-const nodemailer=require('nodemailer')
+const nodemailer = require('nodemailer');
 require("dotenv").config();
+
 const transpoter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
     auth: {
         user: process.env.GmailUSER,
         pass: process.env.Gmail_PASS 
     },
     tls: {
-        rejectUnauthorized: false     },
-    connectionTimeout: 30000 
+        rejectUnauthorized: false,
+        minVersion: "TLSv1.2"
+    },
+    connectionTimeout: 60000,
+    greetingTimeout: 30000,
+    socketTimeout: 60000
 });
 
-
-
-module.exports=transpoter
+module.exports = transpoter;
