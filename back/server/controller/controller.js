@@ -1,7 +1,7 @@
-require("dotenv").config();
 const axios = require("axios");
 const crypto = require("crypto");
 const bcrypt=require('bcrypt')
+require("dotenv").config();
 
 const pool = require("../connection/conn");
 const nodecron=require('node-cron');
