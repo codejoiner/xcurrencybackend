@@ -6,7 +6,7 @@ require("dotenv").config();
 const pool = require("../connection/conn");
 const nodecron=require('node-cron');
 const {CreditDBwithnewBalance}=require('../credituser/creditsuser');
-const transpoter= require('../mailconfig/transpoter')
+const transporter= require('../mailconfig/transpoter')
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const proxyUrl = process.env.PROXY_URL; 
 const agent = new HttpsProxyAgent(proxyUrl);
@@ -703,9 +703,8 @@ const useremailForReceivingResetLink = async (req, res) => {
     const { email } = req.body;
 
     const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-
     if (!email || !emailRegex.test(email.trim())) {
-      return res.status(400).json({ message: "special characters not allowed!" });
+      return res.status(400).json({ message: "Special characters not allowed or invalid email!" });
     }
 
     const [user] = await pool.execute(
@@ -718,14 +717,8 @@ const useremailForReceivingResetLink = async (req, res) => {
     }
 
     let owner = user[0];
-
     const token = crypto.randomBytes(16).toString("hex");
-    const expiration = new Date(Date.now() + 15 * 60 * 1000);
-
-    const hashedToken = crypto
-      .createHash("sha256")
-      .update(token)
-      .digest("hex");
+    const expiration = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     const [countemailresetperuser] = await pool.execute(
       `SELECT COUNT(*) AS total FROM password_resets WHERE user_id=?`,
@@ -745,28 +738,35 @@ const useremailForReceivingResetLink = async (req, res) => {
 
     if (result.affectedRows === 1) {
       const resetlink = `https://xcurrency.vercel.app/reset-password/${token}`;
-          const mailOptions = {
-        from: process.env.GMAILUSER,
-        to: email.trim(), 
-        subject: "Password Reset Link",
+      
+      const emailStatus = await transporter({
+        to: email.trim(),
+        subject: "XCurrency  Password Reset Link",
         html: `
-          <h3>Xcurrency password Reset</h3>
-          <p>Click the link below to reset your password (valid for 15 minutes):</p>
-          <a href="${resetlink}">Reset Password</a>
+          <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd;">
+            <h2>Xcurrency Password Reset</h2>
+            <p>You requested a password reset. Click the button below to proceed:</p>
+            <a href="${resetlink}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
+            <p>This link will expire in 15 minutes.</p>
+            <p>If you didn't request this, ignore this email.</p>
+          </div>
         `,
-      };
-
-      await transpoter.sendMail(mailOptions)
-      return res.status(200).json({
-        message: "Password Reset Link was sent on email",
+        text: `Reset your password here: ${resetlink}` 
       });
+
+      if (emailStatus.success) {
+        return res.status(200).json({
+          message: "Password Reset Link was sent to your email",
+        });
+      } else {
+        return res.status(500).json({ message: "Email delivery failed. Try again later." });
+      }
     }
   } catch (err) {
-    console.log("Error in email reset receiver", err.message);
+    console.error("Error in email reset receiver:", err);
     return res.status(500).json({ message: "Server error!" });
   }
 };
-
 
 
 const VerifylinkTokenANDResetPassword = async (req, res) => {
