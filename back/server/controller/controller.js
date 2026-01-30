@@ -756,7 +756,7 @@ const useremailForReceivingResetLink = async (req, res) => {
 
       if (emailStatus.success) {
         return res.status(200).json({
-          message: "Password Reset Link was sent to your email",
+          message: "Password Reset Link was sent on email",
         });
       } else {
         return res.status(500).json({ message: "Email delivery failed. Try again later." });
