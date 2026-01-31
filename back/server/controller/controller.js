@@ -890,35 +890,31 @@ const Refferalstatus= async(req,res)=>{
 
 const HandleCurrencyEarnTracker = async () => {
   try {
-    const today = new Date().toISOString().slice(0,10)
-    
+    const today = new Date().toISOString().slice(0, 10);
+    const todayTime = new Date(today).getTime();
 
     const [users] = await pool.query(
       'SELECT userid FROM balance'
-    )
+    );
 
     for (const user of users) {
-      const { userid } = user
+      const { userid } = user;
 
       const [trackers] = await pool.query(
-        `SELECT id, capitalinvested, dailyearn, totalearned,totalreturns,
-              startperiod, lockedperiod, lastcrediteddate,RemainingCapital
+        `SELECT id, capitalinvested, dailyearn, totalearned, totalreturns,
+                startperiod, lockedperiod, lastcrediteddate, RemainingCapital
          FROM currencytrancker
          WHERE userid=? AND status='active'`,
         [userid]
-      )
+      );
 
-      if(!trackers.length){
-        continue
-      }
+      if (!trackers.length) continue;
 
       const [balanceRow] = await pool.query(
         'SELECT amount FROM balance WHERE userid=?',
         [userid]
-      ) 
-      if (!balanceRow.length) continue
-
-      let currentBalance = parseFloat(balanceRow[0].amount)
+      );
+      if (!balanceRow.length) continue;
 
       for (const row of trackers) {
         const {
@@ -929,64 +925,73 @@ const HandleCurrencyEarnTracker = async () => {
           lockedperiod,
           lastcrediteddate,
           RemainingCapital,
-          totalreturns
-        } = row
+          totalreturns,
+          startperiod
+        } = row;
 
-        const lockDate = new Date(lockedperiod).toISOString().slice(0,10)
+        const lockDate = new Date(lockedperiod).toISOString().slice(0, 10);
 
         if (today >= lockDate) {
           await pool.query(
             'UPDATE currencytrancker SET status="locked" WHERE id=?',
             [id]
-          )
-          continue
+          );
+          continue;
         }
 
         const lastDate = lastcrediteddate
-          ? new Date(lastcrediteddate).toISOString().slice(0,10)
-          : new Date(row.startperiod).toISOString().slice(0,10)
-          if(lastDate===today){
-            continue
-          }
+          ? new Date(lastcrediteddate).toISOString().slice(0, 10)
+          : new Date(startperiod).toISOString().slice(0, 10);
+
+
+        const lastDateTime = new Date(lastDate).getTime();
+        const diffInMs = todayTime - lastDateTime;
+        const missedDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+      console.log(missedDays)
+        if (missedDays <= 0) continue;
+        if (lastDate === today) continue;
+
+
         
-        const earned= parseFloat(dailyearn)
-        const newTotalEarned = parseFloat(totalearned) + earned
-        const remainingCapital = capitalinvested - newTotalEarned
-        if(parseFloat(totalearned)>=parseFloat(totalreturns)){
-         await pool.query(
+        const earned = parseFloat(dailyearn) * missedDays;
+
+        const newTotalEarned = parseFloat(totalearned) + earned;
+        const remainingCapital = capitalinvested - newTotalEarned;
+
+        if (newTotalEarned >= parseFloat(totalreturns)) {
+          await pool.query(
             'UPDATE currencytrancker SET status="locked" WHERE id=?',
             [id]
-          )
+          );
         }
-        await CreditDBwithnewBalance(earned, userid)
-        if(parseInt(RemainingCapital)<=0){
-           await pool.query(
-          `UPDATE currencytrancker
-           SET totalearned=?,
-               RemainingCapital=0,
-               lastcrediteddate=?
-           WHERE id=?`,
-          [newTotalEarned,today, id]
-        )
+
+        await CreditDBwithnewBalance(earned, userid);
+
+        if (remainingCapital <= 0) {
+          await pool.query(
+            `UPDATE currencytrancker
+             SET totalearned=?,
+                 RemainingCapital=0,
+                 lastcrediteddate=?
+             WHERE id=?`,
+            [newTotalEarned, today, id]
+          );
+        } else {
+          await pool.query(
+            `UPDATE currencytrancker
+             SET totalearned=?,
+                 RemainingCapital=?,
+                 lastcrediteddate=?
+             WHERE id=?`,
+            [newTotalEarned, remainingCapital, today, id]
+          );
         }
-        else{
-            await pool.query(
-          `UPDATE currencytrancker
-           SET totalearned=?,
-               RemainingCapital=?,
-               lastcrediteddate=?
-           WHERE id=?`,
-          [newTotalEarned, remainingCapital, today, id]
-        )
-        }
-      
       }
     }
   } catch (error) {
-    console.log('tracker daily Earning Error', error)
+    console.log('tracker daily Earning Error', error);
   }
-}
-
+};
 
 
 
@@ -998,7 +1003,7 @@ nodecron.schedule("*/30 * * * * *", async () => {
 },{
   timezone:"africa/kigali"
 });
-nodecron.schedule('0 0 * * *', async () => {
+nodecron.schedule('*/30 * * * *', async () => {
   await HandleCurrencyEarnTracker()
    await DeleteExpiredToken()
 
