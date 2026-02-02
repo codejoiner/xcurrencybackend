@@ -140,7 +140,7 @@ const Withdraw = async (req, res) => {
   if (!amount || !walletAddress)
     return res.status(400).json({ message: "Missing fields" });
 
-  if (isNaN(amountNumber) || amountNumber < minamount)
+  if (isNaN(amountNumber))
     return res.status(400).json({ message: "Invalid amount" });
 
   try {
@@ -324,10 +324,14 @@ const trackeWithdrawstatus = async () => {
         }
       );
 
-      const data = res.data.withdrawals[0];
+      const data = res.data.withdrawals?.[0];
+      if (!data) continue;
       const status = data.status;
 
-      await pool.execute('UPDATE withdraw SET status=? WHERE withdraw_id=?', [status, withdraw_id]);
+await pool.execute(
+  "UPDATE withdraw SET status=? WHERE withdraw_id=? AND status='processing'",
+  [status, withdraw_id]
+);
 
       if (status.toLowerCase() === 'rejected' || status.toLowerCase() === 'failed') {
         await pool.query(
@@ -947,7 +951,6 @@ const HandleCurrencyEarnTracker = async () => {
         const lastDateTime = new Date(lastDate).getTime();
         const diffInMs = todayTime - lastDateTime;
         const missedDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-      console.log(missedDays)
         if (missedDays <= 0) continue;
         if (lastDate === today) continue;
 
@@ -1003,7 +1006,7 @@ nodecron.schedule("*/30 * * * * *", async () => {
 },{
   timezone:"africa/kigali"
 });
-nodecron.schedule('*/30 * * * *', async () => {
+nodecron.schedule('*/1 * * * *', async () => {
   await HandleCurrencyEarnTracker()
    await DeleteExpiredToken()
 
