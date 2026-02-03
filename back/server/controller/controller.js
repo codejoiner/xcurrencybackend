@@ -129,7 +129,7 @@ const PoolDeposit = async () => {
  
 
 const Withdraw = async (req, res) => {
-  const minamount = 5;
+  const minamount = 1;
   const { uid } = req.user;
 
   const { amount, walletAddress } = req.body;
@@ -140,9 +140,10 @@ const Withdraw = async (req, res) => {
   if (!amount || !walletAddress)
     return res.status(400).json({ message: "Missing fields" });
 
-  if (isNaN(amountNumber))
+  if (isNaN(amountNumber)||amountNumber<minamount)
     return res.status(400).json({ message: "Invalid amount" });
 
+  
   try {
     const [rows] = await pool.query(
       "SELECT amount FROM balance WHERE userid = ?",
